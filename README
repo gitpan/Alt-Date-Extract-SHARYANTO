@@ -1,0 +1,48 @@
+NAME
+    Alt::Date::Extract::SHARYANTO - SHARYANTO's alternate implementation of
+    Date::Extract
+
+VERSION
+    This document describes version 0.04 of Alt::Date::Extract::SHARYANTO
+    (from Perl distribution Alt-Date-Extract-SHARYANTO), released on
+    2014-05-27.
+
+DESCRIPTION
+    This alternate implementation:
+
+    *   a "returns_orig" option to the constructor
+
+        This is to make "extract()" return the original probable date
+        strings instead of DateTime objects. Can be useful if you want to
+        substitute the text.
+
+    *   recognize pattern: 13 Nov 1986 (day_month_year)
+
+SEE ALSO
+    Alt
+
+HOMEPAGE
+    Please visit the project's homepage at
+    <https://metacpan.org/release/Alt-Date-Extract-SHARYANTO>.
+
+SOURCE
+    Source repository is at
+    <https://github.com/sharyanto/perl-Alt-Date-Extract-SHARYANTO>.
+
+BUGS
+    Please report any bugs or feature requests on the bugtracker website
+    <https://rt.cpan.org/Public/Dist/Display.html?Name=Alt-Date-Extract-SHAR
+    YANTO>
+
+    When submitting a bug or request, please include a test-file or a patch
+    to an existing test-file that illustrates the bug or desired feature.
+
+AUTHOR
+    Steven Haryanto <stevenharyanto@gmail.com>
+
+COPYRIGHT AND LICENSE
+    This software is copyright (c) 2014 by Steven Haryanto.
+
+    This is free software; you can redistribute it and/or modify it under
+    the same terms as the Perl 5 programming language system itself.
+
