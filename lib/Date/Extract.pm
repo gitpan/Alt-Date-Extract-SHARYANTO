@@ -1,13 +1,12 @@
 package Date::Extract;
-use 5.010001;
 use strict;
 use warnings;
 use DateTime::Format::Natural;
 use List::Util 'reduce';
 use parent 'Class::Data::Inheritable';
 
-our $VERSION = '0.04'; # VERSION
-our $DATE = '2014-05-27'; # DATE
+our $VERSION = '0.05.01'; # VERSION
+our $DATE = '2014-06-09'; # DATE
 
 __PACKAGE__->mk_classdata($_) for qw/scalar_downgrade handlers regex/;
 
@@ -19,11 +18,19 @@ sub _croak {
 sub new {
     my $class = shift;
     my %args = (
+        format => 'DateTime',
         returns => 'first',
         prefers => 'nearest',
         time_zone => 'floating',
         @_,
     );
+
+    if ($args{format} ne 'DateTime'
+     && $args{format} ne 'verbatim'
+     && $args{format} ne 'epoch'
+     && $args{format} ne 'combined') {
+        _croak "Invalid `format` passed to constructor: expected `DateTime', `verbatim', `epoch', `combined'.";
+    }
 
     if ($args{returns} ne 'first'
      && $args{returns} ne 'last'
@@ -54,9 +61,9 @@ sub _combine_args {
     my $from = shift;
     my $to = shift;
 
+    $to->{format}    ||= $from->{format};
     $to->{prefers}   ||= $from->{prefers};
     $to->{returns}   ||= $from->{returns};
-    $to->{returns_orig} //= $from->{returns_orig};
     $to->{time_zone} ||= $from->{time_zone};
 }
 
@@ -189,10 +196,18 @@ sub _extract {
     my $text = shift;
     my %args = @_;
 
-    my $regex = $self->regex || $self->_build_regex;
-    my @gleaned = $text =~ /$regex/g;
+    my $fmt = $self->{format};
 
-    return @gleaned if $self->{returns_orig};
+    my $regex = $self->regex || $self->_build_regex;
+    my @combined;
+    while ($text =~ /$regex/g) {
+        push @combined, {
+            pos => $-[0],
+            verbatim => $1,
+        };
+    }
+
+    return (map {$_->{verbatim}} @combined) if $fmt eq 'verbatim';
 
     my %dtfn_args;
     $dtfn_args{prefer_future} = 1
@@ -200,18 +215,24 @@ sub _extract {
     $dtfn_args{time_zone} = $args{time_zone};
 
     my $parser = DateTime::Format::Natural->new(%dtfn_args);
-    my @ret;
-    for (@gleaned) {
-        my $dt = $parser->parse_datetime($_);
-        push @ret, $dt->set_time_zone($args{time_zone})
-            if $parser->success;
+    for (@combined) {
+        my $dt = $parser->parse_datetime($_->{verbatim});
+        if ($parser->success) {
+            $dt->set_time_zone($args{time_zone});
+            $_->{DateTime} = $dt;
+        }
     }
 
-    return @ret;
+    if ($fmt eq 'epoch') {
+        return map { $_->{DateTime}->epoch } @combined;
+    } elsif ($fmt eq 'combined') {
+        return @combined;
+    } else {
+        return map {$_->{DateTime}} @combined;
+    }
 }
 
 1;
-# ABSTRACT: Extract probable dates from strings
 
 __END__
 
@@ -221,11 +242,11 @@ __END__
 
 =head1 NAME
 
-Date::Extract - Extract probable dates from strings
+Date::Extract
 
 =head1 VERSION
 
-This document describes version 0.04 of Date::Extract (from Perl distribution Alt-Date-Extract-SHARYANTO), released on 2014-05-27.
+version 0.05.01
 
 =head1 SYNOPSIS
 
@@ -234,6 +255,10 @@ This document describes version 0.04 of Date::Extract (from Perl distribution Al
         or die "No date found.";
     return $dt->ymd;
 
+=head1 NAME
+
+Date::Extract - extract probable dates from strings
+
 =head1 MOTIVATION
 
 There are already a few modules for getting a date out of a string.
@@ -241,13 +266,12 @@ L<DateTime::Format::Natural> should be your first choice. There's also
 L<Time::ParseDate> which fits many formats. Finally, you can coerce
 L<Date::Manip> to do your bidding.
 
-But I needed something that will take an arbitrary block of text, search it
-for something that looks like a date string, and build a L<DateTime> object
-out of it. This module fills this niche. By design it will produce few false
-positives. This means it will not catch nearly everything that looks like a
-date string. So if you have the string "do homework for class 2019" it won't
-return a L<DateTime> object with the year set to 2019. This is what your users
-would probably expect.
+But I needed something that will take an arbitrary block of text, search it for
+something that looks like a date string, and extract it. This module fills this
+niche. By design it will produce few false positives. This means it will not
+catch nearly everything that looks like a date string. So if you have the string
+"do homework for class 2019" it won't return a L<DateTime> object with the year
+set to 2019. This is what your users would probably expect.
 
 =head1 METHODS
 
@@ -257,7 +281,17 @@ would probably expect.
 
 =over 4
 
+=item format
+
+Choose what format the extracted date(s) will be. The default is "DateTime",
+which will return L<DateTime> object(s). Other option include "verbatim" (return
+the original text), "epoch" (return Unix timestamp), or "combined" (return
+hashref containing these keys "verbatim", "DateTime", "pos" [position of date
+string in the text]).
+
 =item time_zone
+
+Only relevant when C,format> is set to "DateTime".
 
 Forces a particular time zone to be set (this actually matters, as "tomorrow"
 on Monday at 11 PM means something different than "tomorrow" on Tuesday at 1
@@ -326,17 +360,13 @@ Returns all dates found in the string, in chronological order.
 
 =back
 
-=item returns_orig
-
-Can be set to true to return the original probable date string(s) instead of
-L<DateTime> object(s).
-
 =back
 
-=head2 extract text, ARGS => C<DateTime>s
+=head2 extract text, ARGS => dates
 
 Takes an arbitrary amount of text and extracts one or more dates from it. The
-return value will be zero or more C<DateTime> objects. If called in scalar
+return value will be zero or more dates, which by default are L<DateTime>
+objects (but can be customized with the C<format> argument). If called in scalar
 context, only one will be returned, even if the C<returns> argument specifies
 multiple possible return values.
 
@@ -380,29 +410,6 @@ here.
 =head1 SEE ALSO
 
 L<DateTime::Format::Natural>, L<Time::ParseDate>, L<Date::Manip>
-
-https://rt.cpan.org/Ticket/Display.html?id=95998
-
-=head1 ACKNOWLEDGEMENTS
-
-Thanks to Steven Schubiger for writing the fine L<DateTime::Format::Natural>.
-We still use it, but it doesn't quite fill all the particular needs we have.
-
-=head1 HOMEPAGE
-
-Please visit the project's homepage at L<https://metacpan.org/release/Alt-Date-Extract-SHARYANTO>.
-
-=head1 SOURCE
-
-Source repository is at L<https://github.com/sharyanto/perl-Alt-Date-Extract-SHARYANTO>.
-
-=head1 BUGS
-
-Please report any bugs or feature requests on the bugtracker website L<https://rt.cpan.org/Public/Dist/Display.html?Name=Alt-Date-Extract-SHARYANTO>
-
-When submitting a bug or request, please include a test-file or a
-patch to an existing test-file that illustrates the bug or desired
-feature.
 
 =head1 AUTHOR
 
